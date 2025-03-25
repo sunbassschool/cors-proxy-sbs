@@ -1,38 +1,33 @@
 export default async function handler(req, res) {
-  const targetUrl = req.query.url as string;
-
-  // 👉 Toujours définir les headers CORS en premier
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-
-  // 👉 Si requête préflight (OPTIONS), on répond direct
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  const targetUrl = req.query.url;
 
   if (!targetUrl) {
     return res.status(400).json({ error: "Missing URL" });
   }
 
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    return res.status(200).end();
+  }
+
   try {
-    const response = await fetch(targetUrl, {
+    const proxyRes = await fetch(targetUrl, {
       method: req.method,
       headers: {
-        ...req.headers,
-        host: new URL(targetUrl).host,
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        // supprime les en-têtes problématiques (comme host)
       },
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
     });
 
-    const buffer = await response.arrayBuffer();
-    const headers = {};
-    response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
+    const data = await proxyRes.text();
 
-    res.writeHead(response.status, headers);
-    res.end(Buffer.from(buffer));
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", proxyRes.headers.get("content-type") || "text/plain");
+    res.status(proxyRes.status).send(data);
   } catch (error) {
     res.status(500).json({ error: "Proxy error", details: error.message });
   }
